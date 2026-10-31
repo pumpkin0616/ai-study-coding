@@ -1,5 +1,5 @@
 import { createInterface } from "node:readline";
-import type { CliAdapter, CliEvent, CliRunResult } from "./types.js";
+import { promptInputForPlatform, type CliAdapter, type CliEvent, type CliRunResult } from "./types.js";
 import { killCli, spawnCli } from "./spawn-cli.js";
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
@@ -24,9 +24,12 @@ export function runCli(options: RunCliOptions): Promise<CliRunResult> {
     timeoutMs = DEFAULT_TIMEOUT_MS,
     onEvent,
   } = options;
+  let observedAnswer: string | undefined;
+  let observedStats: CliRunResult["stats"];
+  const promptInput = promptInputForPlatform(process.platform);
   const args = sessionId
-    ? adapter.buildResumeArgs(prompt, sessionId)
-    : adapter.buildArgs(prompt);
+    ? adapter.buildResumeArgs(prompt, sessionId, promptInput)
+    : adapter.buildArgs(prompt, promptInput);
 
   return new Promise((resolve, reject) => {
     const child = spawnCli(adapter.command, args, {
@@ -66,10 +69,13 @@ export function runCli(options: RunCliOptions): Promise<CliRunResult> {
           continue;
         }
         if (event.type === "result") {
+          if (event.answer) observedAnswer = event.answer;
+          if (event.stats) observedStats = event.stats;
+          if (!observedAnswer) continue;
           finalResult = {
-            answer: event.answer,
+            answer: observedAnswer,
             sessionId: event.sessionId ?? observedSessionId,
-            ...(event.stats ? { stats: event.stats } : {}),
+            ...(observedStats ? { stats: observedStats } : {}),
           };
         }
       }

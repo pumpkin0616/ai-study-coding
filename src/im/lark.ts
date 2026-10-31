@@ -1,6 +1,7 @@
 /**
  * 飞书接入：WS 长连接收消息 + REST 回消息。
  */
+// @larksuiteoapi/node-sdk 是飞书开放平台提供的 Node.js SDK，让你的程序可以与飞书交互。
 import * as Lark from "@larksuiteoapi/node-sdk";
 import { mkdir } from "node:fs/promises";
 import { extname, join } from "node:path";
@@ -187,6 +188,7 @@ export function startBot(opts: BotOptions): Bot {
   };
 
   const dispatcher = new Lark.EventDispatcher({}).register({
+    // 交互回调事件名card.action.trigger 比如取消按钮
     "card.action.trigger": async (data: any) => {
       if (!onCardAction) return undefined;
       return onCardAction(parseCardAction(data));
