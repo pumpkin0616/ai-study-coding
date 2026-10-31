@@ -1,0 +1,29 @@
+{
+	"name": "ai-study-coding",
+	"version": "1.0.0",
+	"type": "module",
+	"description": "",
+	"main": "index.js",
+	"scripts": {
+		"test": "echo \"Error: no test specified\" && exit 1",
+		"dev": "pnpm start",
+		"start": "tsx watch --include .env src/index.ts",
+		"start:once": "tsx src/index.ts",
+		"build": "tsc",
+		"probe:cli": "tsx src/probe-cli.ts"
+	},
+	"keywords": [],
+	"author": "",
+	"license": "ISC",
+	"packageManager": "pnpm@10.8.1",
+	"dependencies": {
+		"@larksuiteoapi/node-sdk": "^1.76.0",
+		"dotenv": "^18.0.9",
+		"zod": "^4.6.7"
+	},
+	"devDependencies": {
+		"@types/node": "^26.6.6",
+		"tsx": "^4.23.15",
+		"typescript": "^7.0.2"
+	}
+}
