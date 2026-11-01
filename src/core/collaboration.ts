@@ -3,12 +3,15 @@ export interface CollaborationMessage {
   taskId: string;
   fromBotId: string;
   toBotId: string;
+  round: number;
+  maxRounds: number;
   workspaceDir: string;
   prompt: string;
 }
 
+// 第一轮可以得到 T123:1:reviewer，第二轮则是 T123:2:developer。同一个任务的两次交接不会被误判成重复消息。
 export function collaborationTurnKey(message: CollaborationMessage): string {
-  return `${message.taskId}:${message.toBotId}`;
+  return `${message.taskId}:${message.round}:${message.toBotId}`;
 }
 
 export class CollaborationInbox {
