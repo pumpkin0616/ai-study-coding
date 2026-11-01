@@ -1,5 +1,8 @@
 import type { CardAction, CardActionResponse } from "../im/lark.js";
-import { buildClarificationCard, buildClarificationContinuingCard, buildResumeCard } from "../im/card.js";
+import {
+  buildClarificationCard, buildClarificationContinuingCard, buildResumeCard, buildProductSpecApprovedCard,
+  buildProductSpecExpiredCard,
+} from "../im/card.js";
 import type { BotConfig } from "../core/bot-registry.js";
 import { requestTaskAbort } from "../core/task-abort.js";
 import { getCliAdapter } from "../cli/registry.js";
@@ -7,6 +10,7 @@ import { listNativeCliSessions } from "../cli/native-sessions.js";
 import type { AppRuntime } from "./runtime.js";
 import { continueClarificationFlow } from "./clarification-runner.js";
 import { isClarificationOwner } from "../core/clarification.js";
+import { isProductSpecOwner } from '../core/product-spec.js';
 
 export function createCardActionHandler(options: {
   runtime: AppRuntime;
@@ -70,6 +74,47 @@ export function createCardActionHandler(options: {
       } catch (error) {
         return { toast: { type: "error", content: (error as Error).message } };
       }
+    }
+    if (action.value.action === 'approve_product_spec') {
+      const flowToken = typeof action.value.flowToken === 'string'
+        ? action.value.flowToken
+        : '';
+      const flow = runtime.productSpecFlows.get(flowToken);
+      if (!flow || flow.botId !== config.id || !action.messageId) {
+        return { toast: { type: 'error', content: '这份产品方案已经失效。' } };
+      }
+      if (flow.status === 'expired') {
+        return {
+          toast: { type: 'warning', content: '这份产品方案已经失效。' },
+          card: {
+            type: 'raw',
+            data: buildProductSpecExpiredCard(flow),
+          },
+        };
+      }
+      if (flow.status === 'approved') {
+        return {
+          toast: { type: 'info', content: '产品方案已经确认。' },
+          card: {
+            type: 'raw',
+            data: buildProductSpecApprovedCard(flow),
+          },
+        };
+      }
+      if (!isProductSpecOwner(flow, action)) {
+        return { toast: { type: 'warning', content: '只有任务发起人可以确认。' } };
+      }
+      const approved = runtime.productSpecFlows.approve(flowToken);
+      if (!approved) {
+        return { toast: { type: 'warning', content: '方案状态已经更新。' } };
+      }
+      return {
+        toast: { type: 'success', content: '产品方案已确认。' },
+        card: {
+          type: 'raw',
+          data: buildProductSpecApprovedCard(approved),
+        },
+      };
     }
     if (action.value.action === "answer_clarification") {
       const flowToken =

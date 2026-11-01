@@ -11,7 +11,7 @@ import {
   answerNeedsContinuation,
   buildClarificationCard,
   buildCollaborationCard,
-  buildProductSpecReadyCard,
+  buildProductSpecApprovalCard,
   buildSessionNoticeCard,
   buildTaskCard,
   splitLongText,
@@ -47,13 +47,14 @@ import { sendResultNotification } from "./app/notification-service.js";
 import { markSessionIdle } from "./app/session-view.js";
 import type { AppRuntime, BotRuntime } from "./app/runtime.js";
 
+
 import {
   ClarificationFlowStore,
   findClarificationRequest,
   formatClarificationMessage,
 } from './core/clarification.js';
 import { topicTaskId } from './core/topic-task.js';
-import { findProductSpecRequest } from "./core/product-spec.js";
+import { findProductSpecRequest, ProductSpecFlowStore, } from "./core/product-spec.js";
 import { assertProductSpecDocuments } from "./app/product-spec-documents.js";
 
 
@@ -87,6 +88,7 @@ const botRuntimes = new Map<string, BotRuntime>();
 const processedCollaborationTurns = new Set<string>();
 const collaborationInbox = new CollaborationInbox();
 const clarificationFlows = new ClarificationFlowStore();
+const productSpecFlows = new ProductSpecFlowStore();
 const runtime: AppRuntime = {
   sessions,
   teamRegistry,
@@ -96,6 +98,7 @@ const runtime: AppRuntime = {
   processedCollaborationTurns,
   collaborationInbox,
   clarificationFlows,
+  productSpecFlows
 };
 
 console.log("Agent OS 启动，正在建立飞书长连接…");
@@ -473,7 +476,14 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
               activeRuns.delete(session.id);
             }
             await markSessionIdle(sessions, session.id);
-            await cardUpdater.finish(buildProductSpecReadyCard(productSpecRequest));
+            const flow = productSpecFlows.create({
+              taskId,
+              botId: config.id,
+              ownerOpenId: msg.senderOpenId,
+              ownerUnionId: msg.senderUnionId,
+              request: productSpecRequest,
+            });
+            await cardUpdater.finish(buildProductSpecApprovalCard(flow));
             await sendResultNotification({
               bot,
               replyToMessageId: msg.messageId,

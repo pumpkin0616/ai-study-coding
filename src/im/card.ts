@@ -10,6 +10,7 @@ import type { ClarificationFlow } from '../core/clarification.js';
 export type CardJson = Record<string, unknown>;
 export type TaskStatus = "running" | "success" | "failed" | "cancelled";
 import type { ProductSpecRequest } from '../core/product-spec.js';
+import type { ProductSpecFlow } from '../core/product-spec.js';
 export interface ClarificationCardOptions {
   flow: ClarificationFlow;
 }
@@ -629,51 +630,177 @@ export function buildTeamCard(options: TeamCardOptions): CardJson {
   };
 }
 
-export function buildProductSpecReadyCard(
-  request: ProductSpecRequest,
+// export function buildProductSpecReadyCard(
+//   request: ProductSpecRequest,
+// ): CardJson {
+//   const elements: Record<string, unknown>[] = [
+//     {
+//       tag: "markdown",
+//       content: [
+//         `**${escapeFeishuMarkdown(request.title)}**`,
+//         escapeFeishuMarkdown(request.summary),
+//       ].join("\n\n"),
+//     },
+//     { tag: "hr" },
+//     {
+//       tag: "markdown",
+//       content: [
+//         "**真实产物**",
+//         `📘 **Spec** · \`${escapeFeishuMarkdown(request.specPath)}\``,
+//         `🎫 **Tickets** · \`${escapeFeishuMarkdown(request.ticketsPath)}\``,
+//       ].join("\n"),
+//     },
+//   ];
+
+//   elements.push({
+//     tag: "markdown",
+//     content: "_产品文档已经落盘，当前等待确认。本节不会自动交给开发。_",
+//   });
+
+//   return {
+//     schema: "2.0",
+//     config: {
+//       update_multi: true,
+//       summary: { content: `${request.title}：待确认` },
+//     },
+//     header: {
+//       template: "blue",
+//       title: { tag: "plain_text", content: "产品文档已生成" },
+//       subtitle: {
+//         tag: "plain_text",
+//         content: "Spec · Tickets 待确认",
+//       },
+//     },
+//     body: {
+//       direction: "vertical",
+//       vertical_spacing: "12px",
+//       elements,
+//     },
+//   };
+// }
+function productDocumentList(flow: ProductSpecFlow): string {
+  return [
+    `📘 **Spec** · \`${escapeFeishuMarkdown(flow.request.specPath)}\``,
+    `🎫 **Tickets** · \`${escapeFeishuMarkdown(flow.request.ticketsPath)}\``,
+  ].join('\n');
+}
+
+export function buildProductSpecApprovalCard(
+  flow: ProductSpecFlow,
 ): CardJson {
   const elements: Record<string, unknown>[] = [
     {
-      tag: "markdown",
+      tag: 'markdown',
       content: [
-        `**${escapeFeishuMarkdown(request.title)}**`,
-        escapeFeishuMarkdown(request.summary),
-      ].join("\n\n"),
+        `**${escapeFeishuMarkdown(flow.request.title)}**`,
+        escapeFeishuMarkdown(flow.request.summary),
+      ].join('\n\n'),
     },
-    { tag: "hr" },
+    { tag: 'hr' },
     {
-      tag: "markdown",
-      content: [
-        "**真实产物**",
-        `📘 **Spec** · \`${escapeFeishuMarkdown(request.specPath)}\``,
-        `🎫 **Tickets** · \`${escapeFeishuMarkdown(request.ticketsPath)}\``,
-      ].join("\n"),
+      tag: 'markdown',
+      content: `**真实产物**\n${productDocumentList(flow)}`,
     },
   ];
 
   elements.push({
-    tag: "markdown",
-    content: "_产品文档已经落盘，当前等待确认。本节不会自动交给开发。_",
+    tag: 'button',
+    text: { tag: 'plain_text', content: '确认产品方案' },
+    type: 'primary_filled',
+    width: 'fill',
+    size: 'medium',
+    behaviors: [{
+      type: 'callback',
+      value: {
+        action: 'approve_product_spec',
+        flowToken: flow.token,
+      },
+    }],
+  });
+
+  elements.push({
+    tag: 'markdown',
+    content: '_确认后只记录“产品方案已就绪”，本节不会自动交给开发。_',
   });
 
   return {
-    schema: "2.0",
+    schema: '2.0',
     config: {
       update_multi: true,
-      summary: { content: `${request.title}：待确认` },
+      summary: { content: `${flow.request.title}：待确认` },
     },
     header: {
-      template: "blue",
-      title: { tag: "plain_text", content: "产品文档已生成" },
+      template: 'blue',
+      title: { tag: 'plain_text', content: '产品文档已生成' },
       subtitle: {
-        tag: "plain_text",
-        content: "Spec · Tickets 待确认",
+        tag: 'plain_text',
+        content: 'Spec · Tickets 待确认',
       },
     },
     body: {
-      direction: "vertical",
-      vertical_spacing: "12px",
+      direction: 'vertical',
+      vertical_spacing: '12px',
       elements,
+    },
+  };
+}
+
+export function buildProductSpecApprovedCard(
+  flow: ProductSpecFlow,
+): CardJson {
+  return {
+    schema: '2.0',
+    config: {
+      update_multi: true,
+      summary: { content: `${flow.request.title}：已确认` },
+    },
+    header: {
+      template: 'green',
+      title: { tag: 'plain_text', content: '产品方案已确认' },
+      subtitle: { tag: 'plain_text', content: '产品阶段已就绪' },
+    },
+    body: {
+      direction: 'vertical',
+      vertical_spacing: '12px',
+      elements: [{
+        tag: 'markdown',
+        content: [
+          `**${escapeFeishuMarkdown(flow.request.title)}**`,
+          escapeFeishuMarkdown(flow.request.summary),
+          `**已确认文档**\n${productDocumentList(flow)}`,
+          flow.approvedAt
+            ? `确认时间：${escapeFeishuMarkdown(flow.approvedAt)}`
+            : '',
+          '_本节到这里结束，不会自动派发开发任务。_',
+        ].filter(Boolean).join('\n\n'),
+      }],
+    },
+  };
+}
+
+export function buildProductSpecExpiredCard(
+  flow: ProductSpecFlow,
+): CardJson {
+  return {
+    schema: '2.0',
+    config: {
+      update_multi: true,
+      summary: { content: `${flow.request.title}：已失效` },
+    },
+    header: {
+      template: 'grey',
+      title: { tag: 'plain_text', content: '产品方案确认已失效' },
+    },
+    body: {
+      direction: 'vertical',
+      vertical_spacing: '12px',
+      elements: [{
+        tag: 'markdown',
+        content: [
+          `**${escapeFeishuMarkdown(flow.request.title)}**`,
+          '同一任务已经提交了更新的产品方案，请查看话题中最新的确认卡。',
+        ].join('\n\n'),
+      }],
     },
   };
 }

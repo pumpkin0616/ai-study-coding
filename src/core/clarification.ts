@@ -81,7 +81,7 @@ export interface ClarificationAnswer {
 
 export interface ClarificationFlow {
   token: string;
-  taskId?: string;
+  taskId: string;
   botId: string;
   sessionId: string;
   ownerOpenId: string;
@@ -95,7 +95,7 @@ export interface ClarificationFlow {
 }
 
 export interface CreateClarificationFlowOptions {
-  taskId?: string;
+  taskId: string;
   botId: string;
   sessionId: string;
   ownerOpenId: string;
