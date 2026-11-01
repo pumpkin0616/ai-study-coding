@@ -10,6 +10,7 @@ export interface BotConfig {
   defaultCliId: CliId;
   systemPrompt: string;
   workspaceDir: string;
+  reviewBy?: string;
 }
 
 type Environment = Record<string, string | undefined>;
@@ -25,6 +26,10 @@ const BotSchema = z.object({
   appSecretEnv: z.string().regex(/^[A-Z_][A-Z0-9_]*$/),
   defaultCli: z.enum(["claude", "codex"]),
   systemPrompt: z.string().trim().optional().default(""),
+  reviewBy: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9_-]{0,31}$/)
+    .optional(),
   enabled: z.boolean().optional().default(true),
   workspace: z.string().trim().min(1).optional(),
 });
@@ -62,6 +67,7 @@ export function parseBotConfigs(
         appSecret,
         defaultCliId: bot.defaultCli,
         systemPrompt: bot.systemPrompt,
+        reviewBy: bot.reviewBy,
         workspaceDir: resolveWorkspacePath(
           bot.workspace ?? env.CLI_WORKDIR ?? env.CLAUDE_WORKDIR ?? '.',
           baseDirectory,
@@ -69,6 +75,17 @@ export function parseBotConfigs(
       };
     });
   if (configs.length === 0) throw new Error("至少需要启用一个 bot");
+  const enabledIds = new Set(configs.map((config) => config.id));
+  for (const config of configs) {
+    if (config.reviewBy && !enabledIds.has(config.reviewBy)) {
+      throw new Error(
+        `bot ${config.id} 的 reviewBy 指向未启用的 bot: ${config.reviewBy}`,
+      );
+    }
+    if (config.reviewBy === config.id) {
+      throw new Error(`bot ${config.id} 不能把自己配置为 reviewBy`);
+    }
+  }
   return configs;
 }
 

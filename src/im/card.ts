@@ -29,8 +29,14 @@ export interface TaskCardOptions {
   answer?: string;
   stats?: CliRunStats;
   technicalDetail?: string;
-  recipientOpenId?: string;
+  // recipientOpenId?: string;
   abortSessionId?: string;
+}
+export interface CollaborationCardOptions {
+  senderName: string;
+  targetName: string;
+  workspaceName: string;
+  prompt: string;
 }
 
 const STATUS_STYLE = {
@@ -327,13 +333,13 @@ function buildFinishedElements(
       ],
     });
   }
-  if (options.status === "success" && options.recipientOpenId) {
-    elements.push({ tag: "hr" });
-    elements.push({
-      tag: "markdown",
-      content: `**Agent OS** · 发送给：<at id=${options.recipientOpenId}></at>`,
-    });
-  }
+  // if (options.status === "success" && options.recipientOpenId) {
+  //   elements.push({ tag: "hr" });
+  //   elements.push({
+  //     tag: "markdown",
+  //     content: `**Agent OS** · 发送给：<at id=${options.recipientOpenId}></at>`,
+  //   });
+  // }
   return elements;
 }
 
@@ -457,20 +463,83 @@ export function buildResumeCard(options: ResumeCardOptions): CardJson {
   };
 }
 
-export function buildSessionNoticeCard(
-  options: SessionNoticeCardOptions,
+export function buildCollaborationCard(
+  options: CollaborationCardOptions,
 ): CardJson {
   return {
-    schema: '2.0',
-    config: { summary: { content: options.title } },
+    schema: "2.0",
+    config: {
+      update_multi: true,
+      summary: {
+        content: `代码审查已发起：${options.senderName} → ${options.targetName}`,
+      },
+    },
     header: {
-      template: options.template ?? 'blue',
-      title: { tag: 'plain_text', content: options.title },
+      template: "blue",
+      title: { tag: "plain_text", content: "代码审查已发起" },
+      subtitle: {
+        tag: "plain_text",
+        content: `${options.senderName} → ${options.targetName}`,
+      },
     },
     body: {
-      direction: 'vertical',
-      vertical_spacing: '12px',
-      elements: [{ tag: 'markdown', content: options.detail }],
+      direction: "vertical",
+      vertical_spacing: "12px",
+      elements: [
+        {
+          tag: "markdown",
+          content: `**${options.targetName}，请接手检查**\n\n开发任务已经完成，现在进入独立审查。`,
+        },
+        {
+          tag: "column_set",
+          flex_mode: "none",
+          horizontal_spacing: "16px",
+          columns: [
+            {
+              tag: "column",
+              width: "weighted",
+              weight: 3,
+              elements: [
+                {
+                  tag: "markdown",
+                  content: `**项目**\n${escapeFeishuMarkdown(options.workspaceName)}`,
+                },
+              ],
+            },
+            {
+              tag: "column",
+              width: "weighted",
+              weight: 2,
+              elements: [
+                {
+                  tag: "markdown",
+                  content: "**当前环节**\n独立审查",
+                },
+              ],
+            },
+          ],
+        },
+        {
+          tag: "collapsible_panel",
+          expanded: false,
+          header: collapsibleHeader("查看审查说明"),
+          vertical_spacing: "8px",
+          padding: "8px 8px 8px 8px",
+          elements: [
+            {
+              tag: "markdown",
+              content: escapeFeishuMarkdown(
+                markdownPreview(options.prompt, MAX_CARD_ANSWER_LENGTH),
+              ),
+            },
+          ],
+        },
+        { tag: "hr" },
+        {
+          tag: "markdown",
+          content: `_完成后，结果会通知 ${options.senderName}。_`,
+        },
+      ],
     },
   };
 }
@@ -495,7 +564,23 @@ export function splitLongText(text: string, maxLength = 4_000): string[] {
   if (remaining) chunks.push(remaining);
   return chunks;
 }
-
+export function buildSessionNoticeCard(
+  options: SessionNoticeCardOptions,
+): CardJson {
+  return {
+    schema: '2.0',
+    config: { summary: { content: options.title } },
+    header: {
+      template: options.template ?? 'blue',
+      title: { tag: 'plain_text', content: options.title },
+    },
+    body: {
+      direction: 'vertical',
+      vertical_spacing: '12px',
+      elements: [{ tag: 'markdown', content: options.detail }],
+    },
+  };
+}
 type UpdateCard = (card: CardJson) => Promise<void>;
 
 /** 一秒窗口内无论 push 多少次，只提交最新的一张卡片。 */
