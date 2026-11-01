@@ -149,7 +149,14 @@ export class CodexAdapter implements CliAdapter {
     args.push(promptInput === "stdin" ? "-" : prompt);
     return args;
   }
-
+  buildCompactPlan(sessionId: string) {
+    return {
+      protocol: 'codex-app-server' as const,
+      command: this.command,
+      args: ['app-server', '--stdio'],
+      sessionId,
+    };
+  }
   parseEvents(line: string): CliEvent[] {
     let event: CodexEvent;
     try {
