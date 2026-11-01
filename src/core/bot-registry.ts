@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CliId } from "../cli/types.js";
 import { resolveWorkspacePath } from './workspace.js';
 
+
 export interface BotConfig {
   id: string;
   appId: string;
@@ -15,12 +16,17 @@ export interface BotConfig {
   reviewBy?: string;
   collaborationMaxRounds: number;
 }
+const ProductDeliveryModeSchema = z.enum(['local', 'lark-doc']);
+
+export type ProductDeliveryMode = z.infer<typeof ProductDeliveryModeSchema>;
 export interface AgentOsConfig {
+  defaultProductDeliveryMode: ProductDeliveryMode;
   teamLeaderId: string;
   bots: BotConfig[];
 }
 
 type Environment = Record<string, string | undefined>;
+
 
 const BotSchema = z.object({
   id: z
@@ -51,6 +57,7 @@ const BotConfigFileSchema = z.object({
   teamLeader: z
     .string()
     .regex(/^[a-z0-9][a-z0-9_-]{0,31}$/),
+  defaultProductDeliveryMode: ProductDeliveryModeSchema.optional().default('lark-doc'),
   bots: z.array(BotSchema).min(1),
 });
 
@@ -108,7 +115,11 @@ export function parseAgentOsConfig(
       throw new Error(`bot ${config.id} 不能把自己配置为 reviewBy`);
     }
   }
-  return { teamLeaderId: parsed.teamLeader, bots: configs };
+  return {
+    teamLeaderId: parsed.teamLeader,
+    defaultProductDeliveryMode: parsed.defaultProductDeliveryMode,
+    bots: configs,
+  };
 }
 export function parseBotConfigs(
   input: unknown,
@@ -142,16 +153,23 @@ export async function loadAgentOsConfig(
   }
 }
 
-// export function buildBotPrompt(systemPrompt: string, prompt: string): string {
-//   const role = systemPrompt.trim();
-//   if (!role) return prompt;
-//   return `角色：${role}\n\n任务：${prompt}`;
-// }
+
 export function buildBotPrompt(
   config: Pick<BotConfig, 'role' | 'skills' | 'systemPrompt'>,
   prompt: string,
   teamContext = '',
+  defaultProductDeliveryMode: ProductDeliveryMode = 'lark-doc',
 ): string {
+  const managesProductDocuments = config.skills.some((skill) =>
+    ['to-spec', 'to-tickets', 'lark-doc'].includes(skill));
+  const productDeliveryPolicy = managesProductDocuments
+    ? [
+      '产品方案交付规则（必须遵守）：',
+      `- 当前默认交付方式：${defaultProductDeliveryMode}。`,
+      '- 用户明确指定本地 Markdown 或飞书云文档时，以用户本次选择覆盖默认值。',
+      '- 不要为了选择交付格式单独发起澄清。提交方案时必须写入最终采用的 deliveryMode。',
+    ].join('\n')
+    : '';
   const projectSkillPolicy = config.skills.length > 0
     ? [
       '项目 Skill 加载规则（优先级不可颠倒）：',
@@ -173,6 +191,7 @@ export function buildBotPrompt(
     `你的角色：${config.role}`,
     config.systemPrompt.trim(),
     teamContext.trim(),
+    productDeliveryPolicy,
     projectSkillPolicy,
     feishuOutputPolicy,
     config.skills.length > 0
