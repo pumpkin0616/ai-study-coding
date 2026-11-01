@@ -11,6 +11,7 @@ import {
   answerNeedsContinuation,
   buildClarificationCard,
   buildCollaborationCard,
+  buildProductSpecReadyCard,
   buildSessionNoticeCard,
   buildTaskCard,
   splitLongText,
@@ -52,6 +53,8 @@ import {
   formatClarificationMessage,
 } from './core/clarification.js';
 import { topicTaskId } from './core/topic-task.js';
+import { findProductSpecRequest } from "./core/product-spec.js";
+import { assertProductSpecDocuments } from "./app/product-spec-documents.js";
 
 
 const botConfigPath = resolve(
@@ -458,6 +461,27 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
             }
             await markSessionIdle(sessions, session.id);
             await cardUpdater.finish(buildClarificationCard({ flow }));
+            return;
+          }
+          const productSpecRequest =
+            !isCompacting && config.skills.includes("to-spec")
+              ? findProductSpecRequest(result.toolCalls)
+              : undefined;
+          if (productSpecRequest) {
+            await assertProductSpecDocuments(session.workspaceDir, productSpecRequest);
+            if (activeRuns.get(session.id)?.controller === run) {
+              activeRuns.delete(session.id);
+            }
+            await markSessionIdle(sessions, session.id);
+            await cardUpdater.finish(buildProductSpecReadyCard(productSpecRequest));
+            await sendResultNotification({
+              bot,
+              replyToMessageId: msg.messageId,
+              target: { openId: msg.senderOpenId, name: "" },
+              text: "Spec 和 Tickets 已经落盘，请查看上方产物卡片。",
+              replyInThread: hasThread,
+            });
+            console.log("[产品文档] 已展示待确认产物");
             return;
           }
           const snapshot = progress.snapshot();

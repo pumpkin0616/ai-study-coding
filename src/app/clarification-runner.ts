@@ -3,6 +3,7 @@ import {
   answerContinuation,
   answerNeedsContinuation,
   buildClarificationCard,
+  buildProductSpecReadyCard,
   buildTaskCard,
   splitLongText,
   ThrottledCardUpdater,
@@ -19,6 +20,8 @@ import { executeCli } from "./cli-execution.js";
 import { sendResultNotification } from "./notification-service.js";
 import { markSessionIdle } from "./session-view.js";
 import type { AppRuntime } from "./runtime.js";
+import { findProductSpecRequest } from "../core/product-spec.js";
+import { assertProductSpecDocuments } from "./product-spec-documents.js";
 
 export async function continueClarificationFlow(options: {
   runtime: AppRuntime;
@@ -121,7 +124,21 @@ export async function continueClarificationFlow(options: {
       });
       return;
     }
-
+    const productSpecRequest = config.skills.includes("to-spec")
+      ? findProductSpecRequest(result.toolCalls)
+      : undefined;
+    if (productSpecRequest) {
+      await assertProductSpecDocuments(session.workspaceDir, productSpecRequest);
+      await cardUpdater.finish(buildProductSpecReadyCard(productSpecRequest));
+      await sendResultNotification({
+        bot,
+        replyToMessageId: flow.originalMessageId,
+        target: { openId: flow.ownerOpenId, name: "" },
+        text: "Spec 和 Tickets 已经落盘，请查看上方产物卡片。",
+        replyInThread: flow.replyInThread,
+      });
+      return;
+    }
     await cardUpdater.finish(
       buildTaskCard({
         title: adapter.displayName,
