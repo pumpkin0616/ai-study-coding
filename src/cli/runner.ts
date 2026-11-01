@@ -26,11 +26,14 @@ export function runCli(options: RunCliOptions): Promise<CliRunResult> {
   } = options;
   let observedAnswer: string | undefined;
   let observedStats: CliRunResult["stats"];
+  const observedToolCalls = new Map<
+    string,
+    NonNullable<CliRunResult['toolCalls']>[number]
+  >();
   const promptInput = promptInputForPlatform(process.platform);
   const args = sessionId
     ? adapter.buildResumeArgs(prompt, sessionId, promptInput)
     : adapter.buildArgs(prompt, promptInput);
-
   return new Promise((resolve, reject) => {
     const child = spawnCli(adapter.command, args, {
       cwd,
@@ -66,6 +69,14 @@ export function runCli(options: RunCliOptions): Promise<CliRunResult> {
         }
         if (event.type === "error") {
           resultError = new Error(event.message);
+          continue;
+        }
+        if (event.type === 'tool_call') {
+          observedToolCalls.set(event.toolUseId, event);
+          continue;
+        }
+        if (event.type === 'tool_end' && event.failed) {
+          observedToolCalls.delete(event.toolUseId);
           continue;
         }
         if (event.type === "result") {
@@ -113,6 +124,13 @@ export function runCli(options: RunCliOptions): Promise<CliRunResult> {
       }
       if (!finalResult) {
         return fail(new Error(`${adapter.displayName} 没有返回最终结果`));
+      }
+      if (observedToolCalls.size > 0) {
+        finalResult.toolCalls = [...observedToolCalls.values()].map((call) => ({
+          toolUseId: call.toolUseId,
+          toolName: call.toolName,
+          input: call.input,
+        }));
       }
       settled = true;
       finish();

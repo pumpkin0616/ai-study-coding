@@ -10,7 +10,8 @@
 		"start": "tsx watch --include .env --include \"config/*.json\" src/index.ts",
 		"start:once": "tsx src/index.ts",
 		"build": "tsc",
-		"probe:cli": "tsx src/probe-cli.ts"
+		"probe:cli": "tsx src/probe-cli.ts",
+		"probe:tool": "tsx src/probe-app-tool.ts"
 	},
 	"keywords": [],
 	"author": "",
@@ -18,6 +19,7 @@
 	"packageManager": "pnpm@10.8.1",
 	"dependencies": {
 		"@larksuiteoapi/node-sdk": "^1.76.0",
+		"@modelcontextprotocol/sdk": "^1.29.0",
 		"dotenv": "^18.0.9",
 		"zod": "^4.6.7"
 	},

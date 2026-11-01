@@ -1,5 +1,8 @@
 import type { CliAdapter, CliEvent, CliPromptInput, CliRunStats } from "./types.js";
-
+import {
+  CLARIFICATION_TOOL_NAME,
+  codexAppToolArgs,
+} from './app-tools.js';
 interface CodexEvent {
   type?: unknown;
   thread_id?: unknown;
@@ -112,6 +115,7 @@ export class CodexAdapter implements CliAdapter {
 
   buildArgs(prompt: string, promptInput: CliPromptInput): string[] {
     const args = [
+      ...codexAppToolArgs(),
       "exec",
       "--json",
       "--skip-git-repo-check",
@@ -133,6 +137,7 @@ export class CodexAdapter implements CliAdapter {
     promptInput: CliPromptInput,
   ): string[] {
     const args = [
+      ...codexAppToolArgs(),
       "exec",
       "resume",
       "--json",
@@ -192,13 +197,31 @@ export class CodexAdapter implements CliAdapter {
     const tool = toolInfo(item);
     if (!tool) return [];
     if (event.type === "item.started") {
-      return [
-        {
-          type: "tool_start",
+      // return [
+      //   {
+      //     type: "tool_start",
+      //     toolUseId: item.id,
+      //     ...tool,
+      //   },
+      // ];
+      const events: CliEvent[] = [{
+        type: 'tool_start',
+        toolUseId: item.id,
+        ...tool,
+      }];
+      if (
+        item.type === 'mcp_tool_call'
+        && item.server === 'agent_os'
+        && item.tool === CLARIFICATION_TOOL_NAME
+      ) {
+        events.push({
+          type: 'tool_call',
           toolUseId: item.id,
-          ...tool,
-        },
-      ];
+          toolName: CLARIFICATION_TOOL_NAME,
+          input: item.arguments ?? item.input,
+        });
+      }
+      return events;
     }
     if (event.type === "item.completed") {
       const exitCode = asNumber(item.exit_code);

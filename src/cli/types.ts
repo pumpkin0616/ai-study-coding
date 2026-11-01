@@ -47,6 +47,12 @@ export type CliEvent =
   }
   | { type: "tool_end"; toolUseId: string; failed: boolean }
   | { type: "context"; usedTokens: number }
+  | {
+    type: 'tool_call';
+    toolUseId: string;
+    toolName: string;
+    input: unknown;
+  }
   | { type: "result"; answer: string; sessionId?: string; stats?: CliRunStats }
   | { type: "error"; message: string; sessionId?: string };
 
@@ -64,4 +70,9 @@ export interface CliRunResult {
   answer: string;
   sessionId?: string;
   stats?: CliRunStats;
+  toolCalls?: Array<{
+    toolUseId: string;
+    toolName: string;
+    input: unknown;
+  }>;
 }
