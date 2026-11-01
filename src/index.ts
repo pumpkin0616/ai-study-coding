@@ -9,6 +9,7 @@ import { startBot, type Bot } from "./im/lark.js";
 import {
   answerContinuation,
   answerNeedsContinuation,
+  buildClarificationCard,
   buildCollaborationCard,
   buildSessionNoticeCard,
   buildTaskCard,
@@ -45,6 +46,14 @@ import { sendResultNotification } from "./app/notification-service.js";
 import { markSessionIdle } from "./app/session-view.js";
 import type { AppRuntime, BotRuntime } from "./app/runtime.js";
 
+import {
+  ClarificationFlowStore,
+  findClarificationRequest,
+  formatClarificationMessage,
+} from './core/clarification.js';
+import { topicTaskId } from './core/topic-task.js';
+
+
 const botConfigPath = resolve(
   process.env.BOTS_CONFIG ?? join("config", "bots.json"),
 );
@@ -74,6 +83,7 @@ const contextWindows = new Map<string, number>();
 const botRuntimes = new Map<string, BotRuntime>();
 const processedCollaborationTurns = new Set<string>();
 const collaborationInbox = new CollaborationInbox();
+const clarificationFlows = new ClarificationFlowStore();
 const runtime: AppRuntime = {
   sessions,
   teamRegistry,
@@ -82,6 +92,7 @@ const runtime: AppRuntime = {
   botRuntimes,
   processedCollaborationTurns,
   collaborationInbox,
+  clarificationFlows,
 };
 
 console.log("Agent OS 启动，正在建立飞书长连接…");
@@ -219,7 +230,18 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
       }
       const cliAdapter = getCliAdapter(session.cliId);
       const isCompacting = command?.name === "compact";
-      const taskText = collaboration?.prompt ?? cliRequest?.prompt ?? resolved;
+      // const taskText = collaboration?.prompt ?? cliRequest?.prompt ?? resolved;
+      const taskId = topicTaskId(msg);
+      const pendingClarification =
+        msg.senderType !== "app" && msg.senderType !== "bot" && !command
+          ? clarificationFlows.findForTask(taskId, config.id)
+          : undefined;
+      const taskText = pendingClarification
+        ? formatClarificationMessage(
+          pendingClarification,
+          cliRequest?.prompt ?? resolved,
+        )
+        : (collaboration?.prompt ?? cliRequest?.prompt ?? resolved);
       const prompt = buildBotPrompt(
         config,
         taskText,
@@ -385,6 +407,7 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
           answer: result.message ?? "",
           sessionId: result.sessionId,
           stats: undefined,
+          toolCalls: undefined,
         }))
         : executeCli(
           cliAdapter,
@@ -412,6 +435,30 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
           }
           if (!isCompacting && result.stats?.contextWindowTokens) {
             contextWindows.set(session.id, result.stats.contextWindowTokens);
+          }
+
+          const clarificationRequest =
+            !isCompacting && config.skills.includes("grill-me")
+              ? findClarificationRequest(result.toolCalls)
+              : undefined;
+          if (clarificationRequest) {
+            const flow = clarificationFlows.create({
+              taskId,
+              botId: config.id,
+              sessionId: session.id,
+              ownerOpenId: msg.senderOpenId,
+              ownerUnionId: msg.senderUnionId,
+              originalMessageId: msg.messageId,
+              cardMessageId: cardId,
+              replyInThread: hasThread,
+              request: clarificationRequest,
+            });
+            if (activeRuns.get(session.id)?.controller === run) {
+              activeRuns.delete(session.id);
+            }
+            await markSessionIdle(sessions, session.id);
+            await cardUpdater.finish(buildClarificationCard({ flow }));
+            return;
           }
           const snapshot = progress.snapshot();
           await cardUpdater.finish(
@@ -456,7 +503,7 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
               replyInThread: hasThread,
             });
           }
-          if (!isCompacting) {
+          if (!isCompacting && !config.skills.includes('grill-me')) {
             try {
               if (
                 collaboration &&
@@ -579,7 +626,7 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
     },
   });
   const identity = await startedBot.getIdentity();
-  const botRuntime = { config, bot: startedBot, identity };
+  const botRuntime = { config, bot: startedBot, identity, clarificationFlows };
   botRuntimes.set(config.id, botRuntime);
   console.log(
     `[Bot ${config.id.toUpperCase()}] 已连接 name=${identity.name} open_id=${identity.openId}`,
