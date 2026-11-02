@@ -31,6 +31,10 @@ export interface BotOptions {
   appId: string;
   appSecret: string;
   onMessage: (msg: IncomingMessage, bot: Bot) => Promise<void>;
+  onDocumentComment?: (
+    comment: IncomingDocumentComment,
+    bot: Bot,
+  ) => Promise<void>;
   onCardAction?: (
     action: CardAction,
   ) => Promise<CardActionResponse | undefined>;
@@ -43,7 +47,16 @@ export interface CardAction {
   value: Record<string, unknown>;
   formValue: Record<string, unknown>;
 }
-
+export interface IncomingDocumentComment {
+  eventId: string;
+  fileToken: string;
+  fileType: string;
+  commentId: string;
+  replyId: string;
+  senderOpenId: string;
+  senderUnionId: string;
+  mentionedBot: boolean;
+}
 
 export interface CardActionResponse {
   toast?: { type: "success" | "info" | "warning" | "error"; content: string };
@@ -90,6 +103,15 @@ export interface Bot {
     text: string,
     replyInThread?: boolean,
   ) => Promise<string | undefined>;
+  subscribeToDocumentComments: () => Promise<void>;
+  replyToDocumentComment: (
+    comment: IncomingDocumentComment,
+    text: string,
+  ) => Promise<void>;
+  setDocumentCommentWorking: (
+    comment: IncomingDocumentComment,
+    active: boolean,
+  ) => Promise<void>;
 }
 
 export function buildMentionPostContent(
@@ -166,6 +188,16 @@ function renderPostElement(element: PostElement): string {
   }
   return "";
 }
+export const FEISHU_MENTION_LIMIT = 1_200;
+export const FEISHU_COMMENT_LIMIT = 1_000;
+
+export function fitFeishuText(text: string, maxLength: number): string {
+  const characters = Array.from(text);
+  if (characters.length <= maxLength) return text;
+  const suffix = '\n\n（内容过长，已截断。详细内容请写入文档或工作区文件。）';
+  const suffixLength = Array.from(suffix).length;
+  return `${characters.slice(0, Math.max(0, maxLength - suffixLength)).join('')}${suffix}`;
+}
 
 export function extractMessageText(
   messageType: string,
@@ -185,9 +217,36 @@ export function extractMessageText(
   }
   return "";
 }
-
+async function findRootCommentReplyId(
+  client: Lark.Client,
+  comment: IncomingDocumentComment,
+): Promise<string> {
+  const response = await client.drive.v1.fileCommentReply.list({
+    path: {
+      file_token: comment.fileToken,
+      comment_id: comment.commentId,
+    },
+    params: {
+      file_type: comment.fileType as
+        | 'doc'
+        | 'docx'
+        | 'sheet'
+        | 'file'
+        | 'slides'
+        | 'bitable',
+      page_size: 1,
+      user_id_type: 'open_id',
+    },
+  });
+  if (response.code && response.code !== 0) {
+    throw new Error(response.msg || '读取飞书文档评论回复失败');
+  }
+  const replyId = response.data?.items?.[0]?.reply_id;
+  if (!replyId) throw new Error('飞书文档评论缺少可添加表情的回复 ID');
+  return replyId;
+}
 export function startBot(opts: BotOptions): Bot {
-  const { appId, appSecret, onMessage, onCardAction } = opts;
+  const { appId, appSecret, onMessage, onCardAction, onDocumentComment, } = opts;
 
   const client = new Lark.Client({ appId, appSecret });
 
@@ -250,6 +309,58 @@ export function startBot(opts: BotOptions): Bot {
       await res.writeFile(savePath);
       return savePath;
     },
+    async subscribeToDocumentComments() {
+      const response = await client.drive.v1.user.subscription({
+        data: { event_type: 'drive.notice.comment_add_v1' },
+      });
+      if (response.code && response.code !== 0) {
+        throw new Error(response.msg || '订阅飞书文档评论事件失败');
+      }
+    },
+
+    async replyToDocumentComment(comment, text) {
+      const response = await client.drive.v1.fileCommentReply.create({
+        path: {
+          file_token: comment.fileToken,
+          comment_id: comment.commentId,
+        },
+        params: {
+          file_type: comment.fileType as 'doc' | 'docx' | 'sheet'
+            | 'file' | 'slides' | 'bitable',
+          user_id_type: 'open_id',
+        },
+        data: {
+          content: {
+            elements: [{
+              type: 'text_run',
+              text_run: {
+                text: fitFeishuText(text, FEISHU_COMMENT_LIMIT),
+              },
+            }],
+          },
+        },
+      });
+      if (response.code && response.code !== 0) {
+        throw new Error(response.msg || '回复飞书文档评论失败');
+      }
+    },
+
+    async setDocumentCommentWorking(comment, active) {
+      const replyId = comment.replyId
+        || await findRootCommentReplyId(client, comment);
+      const response = await client.drive.v2.commentReaction.updateReaction({
+        path: { file_token: comment.fileToken },
+        params: { file_type: comment.fileType },
+        data: {
+          action: active ? 'add' : 'delete',
+          reply_id: replyId,
+          reaction_type: 'Typing',
+        },
+      });
+      if (response.code && response.code !== 0) {
+        throw new Error(response.msg || '更新飞书文档评论状态失败');
+      }
+    },
   };
 
   const dispatcher = new Lark.EventDispatcher({}).register({
@@ -275,6 +386,25 @@ export function startBot(opts: BotOptions): Bot {
         rawContent: m.content,
       };
       await onMessage(msg, bot);
+    },
+    // 评论
+    'drive.notice.comment_add_v1': async (data) => {
+      if (!onDocumentComment) return;
+      const meta = data.notice_meta;
+      if (!meta?.file_token || !meta.file_type || !data.comment_id) return;
+      await onDocumentComment(
+        {
+          eventId: data.event_id ?? '',
+          fileToken: meta.file_token,
+          fileType: meta.file_type,
+          commentId: data.comment_id,
+          replyId: data.reply_id ?? '',
+          senderOpenId: meta.from_user_id?.open_id ?? '',
+          senderUnionId: meta.from_user_id?.union_id ?? '',
+          mentionedBot: data.is_mentioned ?? false,
+        },
+        bot,
+      );
     },
   });
 

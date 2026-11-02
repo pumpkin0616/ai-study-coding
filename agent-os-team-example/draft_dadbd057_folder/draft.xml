@@ -1,0 +1,127 @@
+<title>Trace 个人中心页面 · 产品说明与实现任务</title>
+<h1>产品说明</h1>
+<h2>背景与定位</h2>
+<p>Trace 是本地优先、数据不上云的时间追踪应用（React 网页）。当前「设置页」承载了用户管理、退出登录等账户操作入口，但用户没有一个地方集中查看「我是谁、我用了多少时间」。本功能把设置页升级为「个人中心」，作为用户的自我信息与账户管理中枢。</p>
+<h2>目标</h2>
+<ul>
+<li>提供「个人中心」页面：从首页顶部「我 / 头像」入口进入。</li>
+<li>集中展示三块内容：本机身份状态、个人使用统计（总使用时长 / Top App / 近 7 天趋势）、账户管理入口（用户管理、退出登录）。</li>
+<li>复用并升级现有「设置页」：用户管理、退出登录入口并入本页，避免两处重复。</li>
+<li>不新增昵称 / 头像等可编辑资料字段。</li>
+</ul>
+<h2>范围</h2>
+<p>包含：</p>
+<ul>
+<li>个人中心页面（独立路由，登录态可达，未登录跳转登录页）。</li>
+<li>首页顶部「我 / 头像」入口。</li>
+<li>身份状态区：已注册、恢复码状态、本地数据量。</li>
+<li>个人使用统计区：总使用时长、Top App、近 7 天趋势。</li>
+<li>账户管理入口：用户管理（改密码 / 重置恢复码 / 删除身份）、退出登录。</li>
+<li>全程离线可用，数据来自本地加密存储，文案符合「诚实、克制」。</li>
+</ul>
+<p>不包含：</p>
+<ul>
+<li>新增昵称 / 头像等可编辑资料。</li>
+<li>追踪数据导出 / 一键清空（删除身份已由用户管理覆盖）。</li>
+<li>云端账号、多用户、多设备同步。</li>
+<li>页面风格改版与登录注册动画（独立话题）。</li>
+<li>第二处「设置页」入口（旧设置页由本页取代）。</li>
+</ul>
+<h2>关键决策（已确认）</h2>
+<ol>
+<li>定位：综合个人中心（身份信息 + 使用统计 + 账户管理入口）。</li>
+<li>与设置页关系：把设置页升级为个人中心，用户管理、退出登录等入口并入本页。</li>
+<li>入口：首页顶部「我 / 头像」入口。</li>
+<li>身份区：只展示本机身份状态，不新增资料字段。</li>
+<li>恢复码「已保存」无法由系统确知，页面只展示系统可确认的「恢复码已生成」状态，避免误导（符合诚实、克制）。</li>
+<li>总使用时长为本地累计总时长；近 7 天趋势为每日总使用时长趋势。</li>
+</ol>
+<h2>验收标准</h2>
+<checkbox done="false">登录态下，首页顶部可见「我 / 头像」入口，点击进入个人中心。</checkbox>
+<checkbox done="false">未登录访问个人中心路由，一律跳转登录页。</checkbox>
+<checkbox done="false">个人中心展示身份状态：已注册、恢复码状态、本地数据量。</checkbox>
+<checkbox done="false">个人中心展示使用统计：总使用时长、Top App、近 7 天趋势。</checkbox>
+<checkbox done="false">个人中心提供用户管理与退出登录入口，点击可达对应功能。</checkbox>
+<checkbox done="false">用户管理、退出登录入口集中在个人中心，无第二处「设置页」重复入口。</checkbox>
+<checkbox done="false">所有数据来自本地加密存储，解锁后才可读，全程离线可用。</checkbox>
+<checkbox done="false">页面只读（统计不可编辑、无可编辑资料字段），文案符合「诚实、克制」。</checkbox>
+<h1>实现任务（Tickets）</h1>
+<p>以下为纵向切片，按依赖顺序排列；每个切片可独立验收。外部依赖（登录路由守卫、首页 App 清单、用户管理、退出登录）需先于对应切片落地。</p>
+<table>
+<thead>
+<tr>
+<th><p>Ticket</p></th>
+<th><p>一句话交付</p></th>
+<th><p>被阻塞依赖</p></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><p>Ticket 01 · 个人中心入口与页面骨架</p></td>
+<td><p>首页「我」进入个人中心，三分区骨架，未登录跳登录页</p></td>
+<td><p>首页 App 清单、登录路由守卫（外部）</p></td>
+</tr>
+<tr>
+<td><p>Ticket 02 · 身份状态区</p></td>
+<td><p>展示已注册、恢复码状态、本地数据量</p></td>
+<td><p>Ticket 01；本地身份存储</p></td>
+</tr>
+<tr>
+<td><p>Ticket 03 · 个人使用统计区</p></td>
+<td><p>展示总使用时长、Top App、近 7 天趋势</p></td>
+<td><p>Ticket 01；本地追踪数据读取</p></td>
+</tr>
+<tr>
+<td><p>Ticket 04 · 账户管理入口接线</p></td>
+<td><p>用户管理、退出登录入口集中在本页，唯一</p></td>
+<td><p>Ticket 01；用户管理、退出登录功能</p></td>
+</tr>
+</tbody>
+</table>
+<h2>Ticket 01 · 个人中心入口与页面骨架</h2>
+<h3>用户可观察行为</h3>
+<p>登录后，首页顶部出现「我 / 头像」入口；点击进入独立的个人中心页面，页面展示「身份状态」「使用统计」「账户管理」三个分区骨架；未登录访问该路由跳转登录页；可从个人中心返回首页。</p>
+<h3>验收标准</h3>
+<checkbox done="false">登录态下首页顶部可见「我 / 头像」入口。</checkbox>
+<checkbox done="false">点击入口进入个人中心路由。</checkbox>
+<checkbox done="false">个人中心展示三个分区标题（身份状态 / 使用统计 / 账户管理）与占位。</checkbox>
+<checkbox done="false">未登录访问个人中心路由，跳转登录页。</checkbox>
+<checkbox done="false">可从个人中心返回首页，前进 / 后退正常。</checkbox>
+<checkbox done="false">离线可用，文案符合「诚实、克制」。</checkbox>
+<h3>被阻塞依赖</h3>
+<p>首页 App 清单与登录路由守卫（docs/trace-login-spec.md）先落地。</p>
+<h2>Ticket 02 · 身份状态区</h2>
+<h3>用户可观察行为</h3>
+<p>个人中心「身份状态」区展示本机身份状态：已注册、恢复码状态（已生成 / 未生成）、本地数据量（如本地已记录天数 / 记录条数）。数据来自本地身份存储，未解锁时不暴露敏感细节。</p>
+<h3>验收标准</h3>
+<checkbox done="false">展示「已注册」状态。</checkbox>
+<checkbox done="false">展示恢复码状态（系统可确认的「已生成」口径，不虚报「已保存」）。</checkbox>
+<checkbox done="false">展示本地数据量。</checkbox>
+<checkbox done="false">信息来自本地身份存储，解锁后才可读；刷新后仍正确。</checkbox>
+<checkbox done="false">不新增昵称 / 头像等可编辑字段。</checkbox>
+<checkbox done="false">文案诚实、克制。</checkbox>
+<h3>被阻塞依赖</h3>
+<p>Ticket 01；本地身份存储（登录 spec 与 trace-user-management 的身份数据）。</p>
+<h2>Ticket 03 · 个人使用统计区</h2>
+<h3>用户可观察行为</h3>
+<p>个人中心「使用统计」区展示个人汇总：总使用时长（本地累计）、Top App（使用时长最高）、近 7 天每日总使用时长趋势。数据来自本地加密追踪数据，只读。</p>
+<h3>验收标准</h3>
+<checkbox done="false">展示总使用时长。</checkbox>
+<checkbox done="false">展示 Top App。</checkbox>
+<checkbox done="false">展示近 7 天趋势。</checkbox>
+<checkbox done="false">数据来自本地加密存储，离线可用，解锁后可见。</checkbox>
+<checkbox done="false">只读，无编辑 / 手动记账入口。</checkbox>
+<checkbox done="false">文案诚实、克制。</checkbox>
+<h3>被阻塞依赖</h3>
+<p>Ticket 01；本地追踪数据读取能力（依赖首页每日 App 清单与本地加密数据读取）。</p>
+<h2>Ticket 04 · 账户管理入口接线</h2>
+<h3>用户可观察行为</h3>
+<p>个人中心「账户管理」区提供「用户管理」与「退出登录」入口，点击分别进入用户管理（改密码 / 重置恢复码 / 删除身份）与触发退出登录；两个入口只在个人中心出现，不与旧「设置页」重复。</p>
+<h3>验收标准</h3>
+<checkbox done="false">「用户管理」入口可达，进入用户管理功能。</checkbox>
+<checkbox done="false">「退出登录」入口可达，触发退出登录流程。</checkbox>
+<checkbox done="false">入口仅登录态可见。</checkbox>
+<checkbox done="false">账户管理入口集中在个人中心，无第二处「设置页」重复入口。</checkbox>
+<checkbox done="false">离线可用，文案诚实、克制。</checkbox>
+<h3>被阻塞依赖</h3>
+<p>Ticket 01；用户管理（trace-user-management）与退出登录（trace-logout）功能先落地。</p>

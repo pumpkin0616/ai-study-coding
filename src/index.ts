@@ -5,7 +5,7 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import { basename, join, resolve } from "node:path";
-import { startBot, type Bot } from "./im/lark.js";
+import { IncomingDocumentComment, startBot, type Bot } from "./im/lark.js";
 import {
   answerContinuation,
   answerNeedsContinuation,
@@ -56,6 +56,8 @@ import {
 import { topicTaskId } from './core/topic-task.js';
 import { findProductSpecRequest, ProductSpecFlowStore, } from "./core/product-spec.js";
 import { assertProductSpecDocuments } from "./app/product-spec-documents.js";
+import { JsonProductSpecFlowStore } from "./core/product-spec-store.js";
+import { runProductDocumentComment } from "./app/product-comment-runner.js";
 
 
 const botConfigPath = resolve(
@@ -88,7 +90,12 @@ const botRuntimes = new Map<string, BotRuntime>();
 const processedCollaborationTurns = new Set<string>();
 const collaborationInbox = new CollaborationInbox();
 const clarificationFlows = new ClarificationFlowStore();
-const productSpecFlows = new ProductSpecFlowStore();
+const productSpecFlows = new JsonProductSpecFlowStore(
+  join('data', 'product-spec-flows.json'),
+);
+const processedDocumentCommentEvents = new Set<string>();
+const documentCommentQueues = new Map<string, Promise<void>>();
+const MAX_REMEMBERED_DOCUMENT_COMMENT_EVENTS = 1_000;
 const runtime: AppRuntime = {
   sessions,
   teamRegistry,
@@ -171,7 +178,89 @@ async function sendCollaborationMessage(options: {
     `[协作] task=${options.taskId} ${options.senderConfig.id} -> ${options.targetBotId} round=${options.round}/${options.maxRounds}`,
   );
 }
+function scheduleDocumentComment(
+  config: BotConfig,
+  bot: Bot,
+  comment: IncomingDocumentComment,
+): void {
+  if (!comment.mentionedBot) return;
+  const flow = productSpecFlows.findPendingByDocument(
+    config.id,
+    comment.fileToken,
+  );
+  //flow： {
+  //   token: 'a9d2210f9cb34f57bbfb55f24d8d907d',
+  //   taskId: 'c4a50fca5ad38a3b3b1b9a6e',
+  //   botId: 'product',
+  //   sessionId: '850bf4d6-e17c-447d-b075-4771eae7cea1',
+  //   ownerOpenId: 'ou_a7615d71ad92444e00fcc91b02f781a7',
+  //   ownerUnionId: 'on_0f6752c76d79ca24704f30abfc9fdb39',
+  //   request: {
+  //     title: 'Trace 个人中心页面',
+  //     summary: 'Trace 个人中心页面：把设置页升级为综合个人中心（本机身份状态 + 个人使用统计总时长/Top App/近7天趋势 + 账户管理入口），从首页顶部「我/头像」进入；拆为 4 个可独立验收的纵向切片，外部依赖为登录路由守卫、首页 App 清单、用户管理与退出登录。',
+  //     deliveryMode: 'lark-doc',
+  //     documentUrl: 'https://my.feishu.cn/docx/EmULdZap1oxDz3xdJmjcM4j6nqf'
+  //   },
+  //   status: 'pending'
+  // } 
+  if (!flow) return;
 
+  const eventKey = comment.eventId || [
+    comment.fileToken,
+    comment.commentId,
+    comment.replyId,
+  ].join(':');
+  if (processedDocumentCommentEvents.has(eventKey)) return;
+  rememberDocumentCommentEvent(eventKey);
+
+  const workingReaction = bot.setDocumentCommentWorking(comment, true)
+    .then(() => true)
+    .catch((error) => {
+      console.warn('添加处理中表情失败，继续执行:', error);
+      return false;
+    });
+  const previous = documentCommentQueues.get(flow.sessionId)
+    ?? Promise.resolve();
+  const queued = Promise.all([
+    previous.catch(() => undefined),
+    workingReaction,
+  ]).then(async ([, reactionAdded]) => {
+    try {
+      await runProductDocumentComment({
+        runtime,
+        bot,
+        flow,
+        comment,
+      });
+    } finally {
+      if (reactionAdded) {
+        await bot.setDocumentCommentWorking(comment, false)
+          .catch((error) => console.warn('移除处理中表情失败:', error));
+      }
+    }
+  });
+  documentCommentQueues.set(flow.sessionId, queued);
+  void queued
+    .catch((error) => bot.replyToDocumentComment(
+      comment,
+      `这条评论暂时没有处理完成：${(error as Error).message}`,
+    ))
+    .finally(() => {
+      if (documentCommentQueues.get(flow.sessionId) === queued) {
+        documentCommentQueues.delete(flow.sessionId);
+      }
+    });
+}
+
+function rememberDocumentCommentEvent(eventKey: string): void {
+  processedDocumentCommentEvents.add(eventKey);
+  if (
+    processedDocumentCommentEvents.size
+    <= MAX_REMEMBERED_DOCUMENT_COMMENT_EVENTS
+  ) return;
+  const oldest = processedDocumentCommentEvents.values().next().value;
+  if (oldest) processedDocumentCommentEvents.delete(oldest);
+}
 async function startConfiguredBot(config: BotConfig): Promise<void> {
   const startedBot = startBot({
     appId: config.appId,
@@ -485,6 +574,7 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
             const flow = productSpecFlows.create({
               taskId,
               botId: config.id,
+              sessionId: session.id,
               ownerOpenId: msg.senderOpenId,
               ownerUnionId: msg.senderUnionId,
               request: productSpecRequest,
@@ -664,10 +754,16 @@ async function startConfiguredBot(config: BotConfig): Promise<void> {
           console.error("[任务] 回传或收尾失败:", (error as Error).message);
         });
     },
+    onDocumentComment: config.skills.includes('lark-drive')
+      ? async (comment, bot) => scheduleDocumentComment(config, bot, comment)
+      : undefined,
   });
   const identity = await startedBot.getIdentity();
   const botRuntime = { config, bot: startedBot, identity, clarificationFlows };
   botRuntimes.set(config.id, botRuntime);
+  if (config.skills.includes('lark-drive')) {
+    await startedBot.subscribeToDocumentComments();
+  }
   console.log(
     `[Bot ${config.id.toUpperCase()}] 已连接 name=${identity.name} open_id=${identity.openId}`,
   );
