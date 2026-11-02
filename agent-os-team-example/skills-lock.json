@@ -1,6 +1,18 @@
 {
   "version": 1,
   "skills": {
+    "agent-browser": {
+      "source": "vercel-labs/agent-browser",
+      "sourceType": "github",
+      "skillPath": "skills/agent-browser/SKILL.md",
+      "computedHash": "e32e16db6b9f84f5c7a250485540d002953284a9e9f7d95e43ed56a7c6c43646"
+    },
+    "code-review-expert": {
+      "source": "sanyuan0704/sanyuan-skills",
+      "sourceType": "github",
+      "skillPath": "skills/code-review-expert/SKILL.md",
+      "computedHash": "6c2fe31851a34e63e033257527eab04eea835ca1cf4c4276d1392a323e36e377"
+    },
     "grill-me": {
       "source": "mattpocock/skills",
       "sourceType": "github",
